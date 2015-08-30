@@ -11,6 +11,7 @@ import org.apache.zookeeper.Watcher;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -40,7 +41,7 @@ public class PathMonitor
     private char PATH_SEPARATOR = '/';
 
     // cache the children set
-    private Set<String> childrenNameCache = new HashSet<String>();
+    private Set<String> childrenNameCache = Collections.synchronizedSet(new HashSet<String>());
 
 
     public PathMonitor(String basePath, CuratorFramework client, NodeChangedListener listener)
