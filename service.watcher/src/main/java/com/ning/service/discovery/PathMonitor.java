@@ -104,7 +104,7 @@ public class PathMonitor
     {
         try {
             byte[] nodeData = client.getData().usingWatcher(childNodeWatcher).forPath(path);
-            String childrenName = path.substring(path.lastIndexOf(PATH_SEPARATOR));
+            String childrenName = path.substring(path.lastIndexOf(PATH_SEPARATOR) + 1);
             childrenNameCache.add(childrenName);
             dataChangeListener.updateData(new NodeChangedListener.
                     ChangedData(NodeChangedListener.OperationType.UPDATE, nodeData, childrenName));

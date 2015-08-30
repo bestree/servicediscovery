@@ -6,6 +6,7 @@ import org.apache.curator.retry.ExponentialBackoffRetry;
 import org.apache.curator.test.TestingCluster;
 import org.junit.*;
 
+import java.io.UnsupportedEncodingException;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -58,10 +59,15 @@ public class PathMonitorTest
             {
                 public void updateData(ChangedData changedData)
                 {
+                    System.out.println(changedData.toString());
                     if (changedData.getType() == OperationType.DELETE) {
                         instances.remove(changedData.getNodeName());
                     } else if (changedData.getType() == OperationType.UPDATE) {
-                        instances.put(changedData.getNodeName(), new String(changedData.getData()));
+                        try {
+                            instances.put(changedData.getNodeName(), new String(changedData.getData(), "UTF-8"));
+                        } catch (UnsupportedEncodingException e) {
+                            e.printStackTrace();
+                        }
                     }
                 }
             };
@@ -73,6 +79,14 @@ public class PathMonitorTest
             Thread.currentThread().sleep(1000);
             Assert.assertNotNull(instances.get("p1"));
             Assert.assertNotNull(instances.get("p2"));
+            curatorFramework.setData().forPath("/ning/p2", "p2new".getBytes("UTF-8"));
+            Thread.currentThread().sleep(2000);
+            Assert.assertEquals("p2new", instances.get("p2"));
+            Thread.currentThread().sleep(1000);
+            curatorFramework.delete().forPath("/ning/p2");
+            Thread.currentThread().sleep(1000);
+            Assert.assertNull(instances.get("p2"));
+
 
         } catch (Exception e) {
             e.printStackTrace();
