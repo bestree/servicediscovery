@@ -31,10 +31,6 @@ public class PathMonitor
     // the client
     private CuratorFramework client;
 
-    // the listener which listen the connection;
-
-    private ConnectionStateListener listener;
-
     // the data change listener
 
     private NodeChangedListener dataChangeListener;
@@ -52,7 +48,8 @@ public class PathMonitor
         this.basePath = basePath;
         this.client = client;
         this.dataChangeListener = listener;
-        this.listener = new ConnectionStateListener()
+        // the listener which listen the connection;
+        ConnectionStateListener connectionStateListener = new ConnectionStateListener()
         {
             public void stateChanged(CuratorFramework curatorFramework, ConnectionState connectionState)
             {
@@ -65,6 +62,7 @@ public class PathMonitor
                 }
             }
         };
+        client.getConnectionStateListenable().addListener(connectionStateListener);
     }
 
 
@@ -87,7 +85,7 @@ public class PathMonitor
         {
             if (watchedEvent.getType() == Event.EventType.NodeDeleted) {
                 String path = watchedEvent.getPath();
-                String childrenName = path.substring(path.lastIndexOf(PATH_SEPARATOR)+1);
+                String childrenName = path.substring(path.lastIndexOf(PATH_SEPARATOR) + 1);
                 childrenNameCache.remove(childrenName);
                 dataChangeListener.updateData(new NodeChangedListener.
                         ChangedData(NodeChangedListener.OperationType.DELETE, null, childrenName));
@@ -126,7 +124,7 @@ public class PathMonitor
             List<String> childrenNames = client.getChildren().
                     usingWatcher(baseNodeWatcher).forPath(basePath);
             //extracted the new set we need set watcher
-             childrenNames.removeAll(childrenNameCache);
+            childrenNames.removeAll(childrenNameCache);
 
             for (String childrenName : childrenNames) {
                 String childrenPath = basePath + PATH_SEPARATOR + childrenName;
