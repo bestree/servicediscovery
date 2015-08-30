@@ -27,6 +27,7 @@ public interface NodeChangedListener
         {
             this.type = type;
             this.data = data;
+            this.nodeName = nodeName;
         }
 
         public byte[] getData()

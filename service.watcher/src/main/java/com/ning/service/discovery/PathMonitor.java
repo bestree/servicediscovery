@@ -4,13 +4,17 @@ import org.apache.curator.framework.CuratorFramework;
 import org.apache.curator.framework.api.BackgroundCallback;
 import org.apache.curator.framework.api.CuratorEvent;
 import org.apache.curator.framework.api.CuratorEventType;
+import org.apache.curator.framework.state.ConnectionState;
 import org.apache.curator.framework.state.ConnectionStateListener;
 import org.apache.zookeeper.WatchedEvent;
 import org.apache.zookeeper.Watcher;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 
 /**
@@ -39,33 +43,30 @@ public class PathMonitor
 
     private char PATH_SEPARATOR = '/';
 
+    // cache the children set
+    private Set<String> childrenNameCache = new HashSet<String>();
+
+
     public PathMonitor(String basePath, CuratorFramework client, NodeChangedListener listener)
     {
         this.basePath = basePath;
         this.client = client;
         this.dataChangeListener = listener;
+        this.listener = new ConnectionStateListener()
+        {
+            public void stateChanged(CuratorFramework curatorFramework, ConnectionState connectionState)
+            {
+                if (connectionState == ConnectionState.RECONNECTED) {
+                    logger.error("The connection reconnected successfully.");
+                    childrenNameCache.clear();
+                    monitor();
+                } else if (connectionState == ConnectionState.LOST) {
+                    logger.error("The connection is lost.");
+                }
+            }
+        };
     }
 
-    public String getBasePath()
-    {
-        return basePath;
-    }
-
-    public void setBasePath(String basePath)
-    {
-        this.basePath = basePath;
-    }
-
-
-    public NodeChangedListener getDataChangeListener()
-    {
-        return dataChangeListener;
-    }
-
-    public void setDataChangeListener(NodeChangedListener dataChangeListener)
-    {
-        this.dataChangeListener = dataChangeListener;
-    }
 
     // the watcher watch the base node
     private Watcher baseNodeWatcher = new Watcher()
@@ -74,8 +75,6 @@ public class PathMonitor
         {
             if (watchedEvent.getType() == Event.EventType.NodeChildrenChanged) {
                 // It means that the children node added of deleted
-                monitorChildrenNodes(watchedEvent.getPath());
-            } else if (watchedEvent.getType() == Event.EventType.NodeCreated) {
                 monitorChildrenNodes(watchedEvent.getPath());
             }
         }
@@ -88,24 +87,27 @@ public class PathMonitor
         {
             if (watchedEvent.getType() == Event.EventType.NodeDeleted) {
                 String path = watchedEvent.getPath();
-                String childrenName = path.substring(path.lastIndexOf(PATH_SEPARATOR));
+                String childrenName = path.substring(path.lastIndexOf(PATH_SEPARATOR)+1);
+                childrenNameCache.remove(childrenName);
                 dataChangeListener.updateData(new NodeChangedListener.
                         ChangedData(NodeChangedListener.OperationType.DELETE, null, childrenName));
             } else if (watchedEvent.getType() == Event.EventType.NodeDataChanged) {
-                monitorChildrenNodes(watchedEvent.getPath());
+                monitorChildrenNode(watchedEvent.getPath());
             }
         }
     };
 
     /**
+     * monitor single child data change
+     *
      * @param path the child path
      */
-    private void monitorChildrenNodes(String path)
+    private void monitorChildrenNode(String path)
     {
         try {
-            client.getChildren().usingWatcher(baseNodeWatcher).forPath(basePath);
             byte[] nodeData = client.getData().usingWatcher(childNodeWatcher).forPath(path);
             String childrenName = path.substring(path.lastIndexOf(PATH_SEPARATOR));
+            childrenNameCache.add(childrenName);
             dataChangeListener.updateData(new NodeChangedListener.
                     ChangedData(NodeChangedListener.OperationType.UPDATE, nodeData, childrenName));
         } catch (Exception e) {
@@ -113,6 +115,35 @@ public class PathMonitor
         }
     }
 
+    /**
+     * monitor
+     *
+     * @param path the child path
+     */
+    private void monitorChildrenNodes(String path)
+    {
+        try {
+            List<String> childrenNames = client.getChildren().
+                    usingWatcher(baseNodeWatcher).forPath(basePath);
+            //extracted the new set we need set watcher
+             childrenNames.removeAll(childrenNameCache);
+
+            for (String childrenName : childrenNames) {
+                String childrenPath = basePath + PATH_SEPARATOR + childrenName;
+                byte[] nodeData = client.getData().usingWatcher(childNodeWatcher).forPath(childrenPath);
+                childrenNameCache.add(childrenName);
+                dataChangeListener.updateData(new NodeChangedListener.
+                        ChangedData(NodeChangedListener.OperationType.UPDATE, nodeData, childrenName));
+            }
+
+        } catch (Exception e) {
+            logger.error("error occurs when monitor children nodes.", e);
+        }
+    }
+
+    /**
+     * starting the path monitoring
+     */
     public void monitor()
     {
         BackgroundCallback backgroundCallback = new BackgroundCallback()
@@ -122,9 +153,10 @@ public class PathMonitor
                 if (curatorEvent.getType() == CuratorEventType.CHILDREN) {
                     List<String> children = curatorEvent.getChildren();
                     for (String childrenName : children) {
-                        String childrenPath = curatorEvent.getPath() + "/" + childrenName;
+                        String childrenPath = curatorEvent.getPath() + PATH_SEPARATOR + childrenName;
                         byte[] childrenData = curatorFramework.getData().
                                 usingWatcher(childNodeWatcher).forPath(childrenPath);
+                        childrenNameCache.add(childrenName);
                         dataChangeListener.updateData(new NodeChangedListener.
                                 ChangedData(NodeChangedListener.OperationType.UPDATE, childrenData, childrenName));
 
