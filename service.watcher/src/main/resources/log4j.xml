@@ -30,9 +30,10 @@
         <appender-ref ref="myConsole"/>
     </logger>
 
+
     <!-- 根logger的设置-->
     <root>
-        <priority value ="debug"/>
+        <priority value ="ERROR"/>
         <appender-ref ref="myConsole"/>
         <appender-ref ref="myFile"/>
     </root>
