@@ -15,6 +15,7 @@ import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 
 /**
@@ -27,6 +28,8 @@ public class PathMonitor
 
     // the base path we will watch.
     private String basePath;
+
+    private String baseNodeName;
 
     // the client
     private CuratorFramework client;
@@ -42,10 +45,12 @@ public class PathMonitor
     // cache the children set
     private Set<String> childrenNameCache = Collections.synchronizedSet(new HashSet<String>());
 
+    private AtomicBoolean started = new AtomicBoolean(false);
 
     public PathMonitor(String basePath, CuratorFramework client, NodeChangedListener listener)
     {
         this.basePath = basePath;
+        this.baseNodeName = basePath.substring(basePath.lastIndexOf(PATH_SEPARATOR) + 1);
         this.client = client;
         this.dataChangeListener = listener;
         // the listener which listen the connection;
@@ -88,7 +93,7 @@ public class PathMonitor
                 String childrenName = path.substring(path.lastIndexOf(PATH_SEPARATOR) + 1);
                 childrenNameCache.remove(childrenName);
                 dataChangeListener.updateData(new NodeChangedListener.
-                        ChangedData(NodeChangedListener.OperationType.DELETE, null, childrenName));
+                        ChangedData(NodeChangedListener.OperationType.DELETE, null, childrenName, baseNodeName));
             } else if (watchedEvent.getType() == Event.EventType.NodeDataChanged) {
                 monitorChildrenNode(watchedEvent.getPath());
             }
@@ -107,7 +112,7 @@ public class PathMonitor
             String childrenName = path.substring(path.lastIndexOf(PATH_SEPARATOR) + 1);
             childrenNameCache.add(childrenName);
             dataChangeListener.updateData(new NodeChangedListener.
-                    ChangedData(NodeChangedListener.OperationType.UPDATE, nodeData, childrenName));
+                    ChangedData(NodeChangedListener.OperationType.UPDATE, nodeData, childrenName, baseNodeName));
         } catch (Exception e) {
             logger.error("error occurs when monitor children nodes.", e);
         }
@@ -125,13 +130,12 @@ public class PathMonitor
                     usingWatcher(baseNodeWatcher).forPath(basePath);
             //extracted the new set we need set watcher
             childrenNames.removeAll(childrenNameCache);
-
             for (String childrenName : childrenNames) {
                 String childrenPath = basePath + PATH_SEPARATOR + childrenName;
                 byte[] nodeData = client.getData().usingWatcher(childNodeWatcher).forPath(childrenPath);
                 childrenNameCache.add(childrenName);
                 dataChangeListener.updateData(new NodeChangedListener.
-                        ChangedData(NodeChangedListener.OperationType.UPDATE, nodeData, childrenName));
+                        ChangedData(NodeChangedListener.OperationType.UPDATE, nodeData, childrenName, basePath));
             }
 
         } catch (Exception e) {
@@ -144,31 +148,47 @@ public class PathMonitor
      */
     public void monitor()
     {
-        BackgroundCallback backgroundCallback = new BackgroundCallback()
-        {
-            public void processResult(CuratorFramework curatorFramework, CuratorEvent curatorEvent) throws Exception
-            {
-                if (curatorEvent.getType() == CuratorEventType.CHILDREN) {
-                    List<String> children = curatorEvent.getChildren();
-                    for (String childrenName : children) {
-                        String childrenPath = curatorEvent.getPath() + PATH_SEPARATOR + childrenName;
-                        byte[] childrenData = curatorFramework.getData().
-                                usingWatcher(childNodeWatcher).forPath(childrenPath);
-                        childrenNameCache.add(childrenName);
-                        dataChangeListener.updateData(new NodeChangedListener.
-                                ChangedData(NodeChangedListener.OperationType.UPDATE, childrenData, childrenName));
+        if (started.get()) {
+            return;
+        }
+        synchronized (this) {
+//            BackgroundCallback backgroundCallback = new BackgroundCallback()
+//            {
+//                public void processResult(CuratorFramework curatorFramework, CuratorEvent curatorEvent) throws Exception
+//                {
+//                    if (curatorEvent.getType() == CuratorEventType.CHILDREN) {
+//                        List<String> children = curatorEvent.getChildren();
+//                        for (String childrenName : children) {
+//                            String childrenPath = curatorEvent.getPath() + PATH_SEPARATOR + childrenName;
+//                            byte[] childrenData = curatorFramework.getData().
+//                                    usingWatcher(childNodeWatcher).forPath(childrenPath);
+//                            childrenNameCache.add(childrenName);
+//                            dataChangeListener.updateData(new NodeChangedListener.
+//                                    ChangedData(NodeChangedListener.OperationType.UPDATE, childrenData, childrenName, basePath));
+//
+//                        }
+//                    }
+//                }
+//            };
+            try {
+                List<String> children = client.getChildren().usingWatcher(baseNodeWatcher).
+                        forPath(basePath);
+                for (String childrenName : children) {
+                    String childrenPath = basePath + PATH_SEPARATOR + childrenName;
+                    byte[] childrenData = client.getData().
+                            usingWatcher(childNodeWatcher).forPath(childrenPath);
+                    childrenNameCache.add(childrenName);
+                    dataChangeListener.updateData(new NodeChangedListener.
+                            ChangedData(NodeChangedListener.OperationType.UPDATE, childrenData, childrenName, baseNodeName));
 
-                    }
                 }
-            }
-        };
-        try {
-            client.getChildren().usingWatcher(baseNodeWatcher).
-                    inBackground(backgroundCallback).forPath(basePath);
 
-        } catch (Exception e) {
-            logger.error("Fail to get children of the path" +
-                    String.valueOf(basePath), e);
+            } catch (Exception e) {
+                logger.error("Fail to get children of the path" +
+                        String.valueOf(basePath), e);
+                throw new RuntimeException(e);
+            }
+            started.set(true);
         }
     }
 

@@ -23,11 +23,15 @@ public interface NodeChangedListener
         private byte[] data;
         private String nodeName;
 
-        public ChangedData(OperationType type, byte[] data, String nodeName)
+
+        private String baseName;
+
+        public ChangedData(OperationType type, byte[] data, String nodeName,String baseName)
         {
             this.type = type;
             this.data = data;
             this.nodeName = nodeName;
+            this.baseName=baseName;
         }
 
         public byte[] getData()
@@ -44,6 +48,12 @@ public interface NodeChangedListener
         {
             return nodeName;
         }
+
+        public String getBaseName()
+        {
+            return baseName;
+        }
+
 
         @Override
         public String toString()
